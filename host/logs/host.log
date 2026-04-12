@@ -1,0 +1,7 @@
+2026-04-12 22:08:03,853 - __main__ - ERROR - 系统启动失败: 'gbk' codec can't encode character '\u26a0' in position 0: illegal multibyte sequence
+2026-04-12 22:10:27,751 - llm_manager - INFO - 成功加载文件: host-llm/system_prompt.md
+2026-04-12 22:10:27,752 - llm_manager - INFO - 成功加载文件: memory-bank/personality.md
+2026-04-12 22:10:27,753 - llm_manager - INFO - 成功加载文件: memory-bank/ltm.md
+2026-04-12 22:10:27,754 - mqtt_client - INFO - 连接到MQTT服务器: iot-06z00iiu01mgty5.mqtt.iothub.aliyuncs.com:1883
+2026-04-12 22:10:27,990 - mqtt_client - INFO - MQTT连接成功
+2026-04-12 22:10:27,991 - mqtt_client - INFO - 订阅主题: xxbot/device/+/command/#
