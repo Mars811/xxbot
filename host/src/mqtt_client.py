@@ -20,8 +20,8 @@ class MQTTClient:
         if rc == 0:
             self.logger.info("MQTT连接成功")
             self.connected = True
-            self.client.subscribe(config.MQTT_TOPIC_DEVICE_TO_HOST, qos=config.MQTT_QOS)
-            self.logger.info(f"订阅主题: {config.MQTT_TOPIC_DEVICE_TO_HOST}")
+            self.client.subscribe(config.MQTT_GET_TOPIC, qos=config.MQTT_QOS)
+            self.logger.info(f"订阅主题: {config.MQTT_GET_TOPIC}")
         else:
             self.logger.error(f"MQTT连接失败，返回码: {rc}")
     
@@ -89,6 +89,4 @@ class MQTTClient:
             self.logger.error(f"发送消息时出错: {e}")
             return False
     
-    def publish_to_device(self, device_id: str, message: str):
-        topic = config.get_mqtt_topic_host_to_device(device_id)
-        return self.publish(topic, message)
+

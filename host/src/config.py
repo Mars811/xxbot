@@ -35,9 +35,6 @@ class Config:
         
         self.LOG_LEVEL = os.getenv("LOG_LEVEL")
         self.LOG_FILE = os.getenv("LOG_FILE")
-        
-        self.MQTT_TOPIC_DEVICE_TO_HOST = os.getenv("MQTT_TOPIC_DEVICE_TO_HOST")
-        self.MQTT_TOPIC_HOST_TO_DEVICE = os.getenv("MQTT_TOPIC_HOST_TO_DEVICE")
     
     def _validate_config(self):
         required_configs = [
@@ -61,8 +58,7 @@ class Config:
         if missing_configs:
             raise ValueError(f"缺少必需的配置项: {', '.join(missing_configs)}")
     
-    def get_mqtt_topic_host_to_device(self, device_id: str = "default") -> str:
-        return self.MQTT_TOPIC_HOST_TO_DEVICE.format(device_id=device_id)
+
 
 
 config = Config()

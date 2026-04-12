@@ -131,21 +131,16 @@ class XXBotHost:
             ui_manager.show_status(f"转发消息到设备: {msg}")
             ui_manager.show_skills(esp_skills, host_skills)
             
-            device_id = self._extract_device_id(topic)
+            success = self.mqtt_client.publish(config.MQTT_UPDATE_TOPIC, str(parsed_command.raw_json))
             
-            if device_id:
-                success = self.mqtt_client.publish_to_device(device_id, str(parsed_command.raw_json))
-                
-                if success:
-                    ui_manager.show_mqtt_message(
-                        config.get_mqtt_topic_host_to_device(device_id),
-                        str(parsed_command.raw_json),
-                        "发送"
-                    )
-                else:
-                    ui_manager.show_error("发送消息到设备失败")
+            if success:
+                ui_manager.show_mqtt_message(
+                    config.MQTT_UPDATE_TOPIC,
+                    str(parsed_command.raw_json),
+                    "发送"
+                )
             else:
-                ui_manager.show_error("无法从主题中提取设备ID")
+                ui_manager.show_error("发送消息到设备失败")
                 
         except Exception as e:
             ui_manager.show_error(f"处理主机对话失败: {e}")
