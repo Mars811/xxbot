@@ -1,0 +1,5 @@
+# Ignore .xmind files
+*.xmind
+
+# Ignore xxbot specific xmind file
+xxbot.xmind
