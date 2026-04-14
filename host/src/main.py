@@ -1,178 +1,155 @@
-import logging
-import signal
+import os
+import json
 import sys
-from pathlib import Path
-from typing import Optional
 
+# 先加载环境变量
+env_file = os.path.join(os.path.dirname(__file__), "..", "host.env")
+if os.path.exists(env_file):
+    with open(env_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                key, value = line.split('=', 1)
+                os.environ[key] = value
+    print("加载环境变量成功")
+else:
+    print("host.env文件不存在")
+
+# 现在再导入其他模块
 from config import config
-from mqtt_client import MQTTClient
-from json_parser import JSONParser, ParsedCommand
-from llm_manager import LLMManager
-from ui_manager import ui_manager
-
+from logger import logger
+from memory import memory_manager
+from llm_client import llm_client
+from skill import execute_skills, SKILL_ALIASES
 
 class XXBotHost:
     def __init__(self):
-        self._setup_logging()
-        
-        self.mqtt_client: Optional[MQTTClient] = None
-        self.llm_manager: Optional[LLMManager] = None
-        self.running = False
-        
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        logger.info("系统", "初始化XXBot Host")
     
-    def _setup_logging(self):
-        log_dir = Path(__file__).parent.parent / "logs"
-        log_dir.mkdir(exist_ok=True)
-        
-        log_file = log_dir / Path(config.LOG_FILE).name
-        
-        logging.basicConfig(
-            level=getattr(logging, config.LOG_LEVEL),
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
-        
-        self.logger = logging.getLogger(__name__)
+    def initialize_environment(self):
+        """初始化环境"""
+        # 环境变量已经在导入模块之前加载
+        logger.success("加载环境变量成功")
     
-    def _signal_handler(self, signum, frame):
-        self.logger.info(f"接收到信号 {signum}，准备退出...")
-        self.stop()
-        sys.exit(0)
-    
-    def start(self):
-        try:
-            ui_manager.show_welcome()
-            ui_manager.show_status("正在初始化系统...")
-            
-            self.llm_manager = LLMManager()
-            ui_manager.show_status("LLM管理器初始化成功")
-            
-            self.mqtt_client = MQTTClient(on_message_callback=self._handle_mqtt_message)
-            self.mqtt_client.connect()
-            ui_manager.show_status("MQTT客户端连接成功")
-            
-            self.running = True
-            ui_manager.show_status("系统启动成功，开始监听消息...")
-            ui_manager.show_separator()
-            
-            while self.running:
-                import time
-                time.sleep(1)
-                
-        except Exception as e:
-            self.logger.error(f"系统启动失败: {e}")
-            ui_manager.show_error(f"系统启动失败: {e}")
-            self.stop()
-    
-    def stop(self):
-        self.running = False
+    def handle_message(self, user_input):
+        """处理消息"""
+        # 构建JSON（模拟设备发送的格式）
+        message_json = {
+            "object": "device",
+            "time": "2026-04-14T10:00:00Z",
+            "command": {
+                "type": "talk",
+                "data": {
+                    "msg": user_input
+                }
+            }
+        }
         
-        if self.mqtt_client:
-            self.mqtt_client.disconnect()
-            ui_manager.show_status("MQTT客户端已断开")
+        logger.system(f"收到消息: {user_input}")
         
-        ui_manager.show_statistics()
-        ui_manager.show_status("系统已停止")
+        # 解析命令
+        command_type = message_json.get("command", {}).get("type", "")
+        if command_type == "talk":
+            self.handle_talk_command(message_json)
+        else:
+            logger.error(f"未知命令类型: {command_type}")
     
-    def _handle_mqtt_message(self, topic: str, payload: str):
-        try:
-            ui_manager.show_mqtt_message(topic, payload, "接收")
-            
-            parsed_command = JSONParser.parse(payload)
-            ui_manager.show_parsed_command(parsed_command)
-            
-            if parsed_command.is_device_talk():
-                self._handle_device_talk(parsed_command)
-            elif parsed_command.is_host_talk():
-                self._handle_host_talk(parsed_command, topic)
-            else:
-                ui_manager.show_status(f"未处理的命令类型: {parsed_command.command_type}")
-                
-        except ValueError as e:
-            ui_manager.show_error(f"JSON解析失败: {e}")
-        except Exception as e:
-            ui_manager.show_error(f"处理消息时出错: {e}")
+    def handle_talk_command(self, message_json):
+        """处理talk命令"""
+        # 提取消息内容
+        msg = message_json.get("command", {}).get("data", {}).get("msg", "")
         
-        ui_manager.show_separator()
-    
-    def _handle_device_talk(self, parsed_command: ParsedCommand):
-        try:
-            user_message = parsed_command.data.get("msg", "")
-            
-            if not user_message:
-                ui_manager.show_error("talk命令缺少msg字段")
-                return
-            
-            ui_manager.show_status(f"处理用户消息: {user_message}")
-            
-            reply, esp_skills, host_skills = self.llm_manager.process_talk(user_message)
-            
-            ui_manager.show_api_response(reply)
-            ui_manager.show_skills(esp_skills, host_skills)
-            
-            response_json = JSONParser.build_response(reply, esp_skills, host_skills)
-            
-            self._process_response_json(response_json)
-            
-        except Exception as e:
-            ui_manager.show_error(f"处理设备对话失败: {e}")
-    
-    def _handle_host_talk(self, parsed_command: ParsedCommand, topic: str):
-        try:
-            msg = parsed_command.data.get("msg", "")
-            esp_skills = parsed_command.data.get("esp_skills", [])
-            host_skills = parsed_command.data.get("host_skills", [])
-            
-            ui_manager.show_status(f"转发消息到设备: {msg}")
-            ui_manager.show_skills(esp_skills, host_skills)
-            
-            success = self.mqtt_client.publish(config.MQTT_UPDATE_TOPIC, str(parsed_command.raw_json))
-            
-            if success:
-                ui_manager.show_mqtt_message(
-                    config.MQTT_UPDATE_TOPIC,
-                    str(parsed_command.raw_json),
-                    "发送"
-                )
-            else:
-                ui_manager.show_error("发送消息到设备失败")
-                
-        except Exception as e:
-            ui_manager.show_error(f"处理主机对话失败: {e}")
-    
-    def _process_response_json(self, response_json: str):
-        try:
-            parsed_response = JSONParser.parse(response_json)
-            
-            if parsed_response.is_host_talk():
-                ui_manager.show_status("检测到host talk命令，准备转发")
-                
-                self._handle_host_talk(parsed_response, "local")
-            else:
-                ui_manager.show_status(f"未知的响应类型: {parsed_response.command_type}")
-                
-        except Exception as e:
-            ui_manager.show_error(f"处理响应JSON失败: {e}")
-    
-    def _extract_device_id(self, topic: str) -> Optional[str]:
-        parts = topic.split('/')
+        # 读取记忆
+        stm = memory_manager.get_stm()
+        personality = memory_manager.get_personality()
         
-        for i, part in enumerate(parts):
-            if part == "device" and i + 1 < len(parts):
-                return parts[i + 1]
+        # 判断是否读取完整LTM
+        full_ltm = memory_manager.should_read_full_ltm()
+        ltm = memory_manager.get_ltm(full=full_ltm)
         
-        return "default"
-
-
-def main():
-    host = XXBotHost()
-    host.start()
-
+        # 构建messages
+        messages = llm_client.build_messages(msg, stm, personality, ltm)
+        
+        # 调用LLM
+        response_text = llm_client.call_llm(messages)
+        
+        if not response_text:
+            logger.error("LLM没有返回响应")
+            return
+        
+        # 解析响应
+        reply, instructions = llm_client.parse_response(response_text)
+        
+        # 处理记忆指令
+        if "memory" in instructions:
+            memory_data = instructions["memory"]
+            if "stm" in memory_data:
+                memory_manager.add_to_stm("assistant", memory_data["stm"])
+            if "ltm" in memory_data and memory_data["ltm"]:
+                memory_manager.add_to_ltm(memory_data["ltm"])
+        
+        # 处理技能指令
+        skill_results = []
+        if "skills" in instructions:
+            skill_results = execute_skills(instructions["skills"])
+        
+        # 处理esp_cmd指令（预留）
+        esp_cmd = instructions.get("esp_cmd", {})
+        
+        # 处理esp_cmd中的技能别名
+        if "skill" in esp_cmd:
+            skill_name = esp_cmd["skill"]
+            if skill_name in SKILL_ALIASES:
+                original_skill = skill_name
+                esp_cmd["skill"] = SKILL_ALIASES[skill_name]
+                logger.system(f"ESP指令技能别名映射: {original_skill} -> {esp_cmd['skill']}")
+        
+        # 构建响应
+        response = {
+            "object": "host",
+            "time": "2026-04-14T10:00:01Z",
+            "command": {
+                "type": "talk",
+                "data": {
+                    "msg": reply,
+                    "skills": skill_results,
+                    "esp_cmd": esp_cmd
+                }
+            }
+        }
+        
+        # 输出结果
+        logger.dialogue(f"回复: {reply}")
+        
+        if skill_results:
+            for result in skill_results:
+                logger.system(f"技能结果: {result}")
+        
+        if esp_cmd:
+            logger.system(f"设备指令: {esp_cmd}")
+        
+        # 添加到STM
+        memory_manager.add_to_stm("user", msg)
+        memory_manager.add_to_stm("assistant", reply)
+    
+    def run(self):
+        """运行主循环"""
+        logger.info("系统", "XXBot Host启动成功")
+        logger.info("系统", "输入'quit'退出")
+        
+        while True:
+            try:
+                user_input = input("你: ")
+                if user_input.lower() == "quit":
+                    logger.info("系统", "退出系统")
+                    break
+                self.handle_message(user_input)
+            except KeyboardInterrupt:
+                logger.info("系统", "用户中断")
+                break
+            except Exception as e:
+                logger.error(f"处理消息时出错: {e}")
 
 if __name__ == "__main__":
-    main()
+    host = XXBotHost()
+    host.run()
